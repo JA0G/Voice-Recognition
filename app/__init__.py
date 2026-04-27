@@ -9,7 +9,6 @@ import subprocess
 
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 AUTHORIZED_FOLDER = os.path.join(BASE_DIR, "authorized_users")
-THRESHOLD = 0.75
 
 verification = SpeakerRecognition.from_hparams(
     source="speechbrain/spkrec-ecapa-voxceleb",
@@ -29,8 +28,13 @@ def find_authorized_user(temp_audio_path):
                 user_path,
                 temp_audio_path
             )
+            
+            print("-----")
+            print("Comparando con:", filename)
+            print("Score:", score.item())
+            print("Prediction:", prediction.item())
 
-            if bool(prediction) and score > THRESHOLD:
+            if bool(prediction):
                 return filename.replace(".wav", "")
 
     return None
