@@ -1,0 +1,19 @@
+# Entorno virtual
+.venv/
+
+# VSCode
+.vscode/
+
+# Modelo descargado
+tmp_model/
+
+# Archivos temporales
+temp.*
+audio_cache/
+
+# Audio autorizado
+authorized.wav
+
+# Python
+__pycache__/
+*.pyc
