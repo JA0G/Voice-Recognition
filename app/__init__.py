@@ -7,9 +7,13 @@ from speechbrain.pretrained import SpeakerRecognition
 import requests
 import subprocess
 
+import torch
+
+user_embeddings = {}
+
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 AUTHORIZED_FOLDER = os.path.join(BASE_DIR, "authorized_users")
-THRESHOLD = 0.6
+THRESHOLD = 0.4
 
 verification = SpeakerRecognition.from_hparams(
     source="speechbrain/spkrec-ecapa-voxceleb",
@@ -17,48 +21,68 @@ verification = SpeakerRecognition.from_hparams(
     run_opts={"device": "cpu"}
 )
 
-def find_authorized_user(temp_audio_path):
-    if not os.path.exists(AUTHORIZED_FOLDER):
-        return None
 
-    best_score = 0
-    best_user = None
+def load_authorized_embeddings():
+    global user_embeddings
+    user_embeddings = {}
 
     for user_name in os.listdir(AUTHORIZED_FOLDER):
         user_folder = os.path.join(AUTHORIZED_FOLDER, user_name)
 
         if os.path.isdir(user_folder):
 
+            embeddings_list = []
+
             for filename in os.listdir(user_folder):
                 if filename.endswith(".wav"):
-                    user_path = os.path.join(user_folder, filename)
+                    path = os.path.join(user_folder, filename)
 
-                    score, prediction = verification.verify_files(
-                        user_path,
-                        temp_audio_path
-                    )
+                    signal = verification.load_audio(path)
+                    embedding = verification.encode_batch(signal).squeeze()
+                    embeddings_list.append(embedding)
 
-                    score_value = score.item()
+            if embeddings_list:
+                # Promedio de embeddings del usuario
+                user_embeddings[user_name] = torch.mean(
+                    torch.stack(embeddings_list),
+                    dim=0
+                )
 
-                    print("-----")
-                    print("Usuario:", user_name)
-                    print("Archivo:", filename)
-                    print("Score:", score_value)
+    print("Embeddings cargados correctamente")
 
-                    # Guardar el mejor score encontrado
-                    if score_value > best_score:
-                        best_score = score_value
-                        best_user = user_name
 
-    print("====== RESULTADO FINAL ======")
-    print("Mejor usuario:", best_user)
-    print("Mejor score:", best_score)
+def find_authorized_user(temp_audio_path):
 
-    # Aplicar threshold
-    if best_score >= THRESHOLD:
-        return best_user
+    with torch.no_grad():
 
-    return None
+        signal = verification.load_audio(temp_audio_path)
+        test_embedding = verification.encode_batch(signal).squeeze()
+
+        best_score = -1.0
+        best_user = None
+
+        for user_name, stored_embedding in user_embeddings.items():
+
+            score = torch.nn.functional.cosine_similarity(
+                test_embedding,
+                stored_embedding,
+                dim=0
+            ).item()
+
+            print("Usuario:", user_name)
+            print("Score:", score)
+
+            if score > best_score:
+                best_score = score
+                best_user = user_name
+
+        print("Mejor score:", best_score)
+
+        if best_score >= THRESHOLD:
+            return best_user
+
+        return None
+
 
 def create_app():
     app = Flask(__name__)
@@ -91,5 +115,7 @@ def create_app():
         
     if not os.path.exists(AUTHORIZED_FOLDER):
         os.makedirs(AUTHORIZED_FOLDER)
-        
+
+    load_authorized_embeddings()
+
     return app
